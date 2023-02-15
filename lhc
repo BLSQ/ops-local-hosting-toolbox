@@ -43,7 +43,7 @@ for container in client.containers.list():
          if sys.argv[1] == "sql":
             command = f"psql {database_url}"
          if sys.argv[1] == "dump":
-            command = f"pg_dump -Fc -v --no-acl --no-owner --dbname={database_url} -f /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).dump &> /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).log"
+            command = f"pg_dump -Fc -v --no-acl --no-owner --dbname={database_url} -f /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).dump"
          if sys.argv[1] == "diagnosedb":
             query = "COPY (select * from pg_stat_activity) TO STDOUT WITH CSV HEADER;"
             command = f"PAGER=cat psql {database_url} -c \"{query}\""
