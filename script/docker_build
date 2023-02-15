@@ -1,0 +1,23 @@
+#!/bin/bash
+FULL_VERSION=$1
+
+DESCRIBE=`git describe --tags --always`
+echo $DESCRIBE
+# increment the build number (ie 115 to 116)
+VERSION=`echo $DESCRIBE | awk '{split($0,a,"-"); print a[1]}'`
+BUILD=`echo $DESCRIBE | awk '{split($0,a,"-"); print a[2]}'`
+PATCH=`echo $DESCRIBE | awk '{split($0,a,"-"); print a[3]}'`
+
+echo "version $DESCRIBE =>  VERSION:${VERSION} BUILD:${BUILD} PATCH:${PATCH}"
+
+DOCKER_TAG=${VERSION:-0}"."${BUILD:-0}"."${PATCH:-0}
+
+DOCKER_RELEASE_TIME=`date +"%Y-%m-%dT%H:%M:%S%z"`
+
+echo "building image with tags :  ${DOCKER_TAG} based on ${VERSION}    patch ${PATCH} ($DESCRIBE)"
+echo "RELEASE_TIME: ${DOCKER_RELEASE_TIME}"
+
+docker build -t blsq/local-hosting-toolbox:$DOCKER_TAG -t blsq/local-hosting-toolbox:latest --build-arg DOCKER_TAG=$DOCKER_TAG --build-arg DOCKER_RELEASE_TIME=$DOCKER_RELEASE_TIME --file Dockerfile .
+
+echo "Next step to monitor the size, for the moment let's log it"
+docker images blsq/local-hosting-toolbox

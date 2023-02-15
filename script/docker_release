@@ -1,0 +1,2 @@
+#!/bin/bash
+docker push blsq/local-hosting-toolbox --all-tags
