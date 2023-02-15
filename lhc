@@ -36,10 +36,15 @@ for container in client.containers.list():
          if ":" in hostport:
             host = hostport.split(':')[0]
             port = hostport.split(':')[1]
-            
+
          print("")
          print("*************** ", container.name, container.image.attrs["RepoTags"])
 
+         if sys.argv[1] == "config":
+            for key_value in container.attrs["Config"]["Env"]:
+                if "=" in key_value:
+                    print(key_value)
+            command = "echo done"
          if sys.argv[1] == "top":
             command = f"PGPASSWORD={password} pg_activity -h {host} -U {user} -d {path} --rds"
          if sys.argv[1] == "cli":
