@@ -4,7 +4,7 @@
 ## Installation
 
 ```
-curl https://raw.githubusercontent.com/mestachs/ops-local-hosting-toolbox/main/run -o toolbox
+curl https://raw.githubusercontent.com/BLSQ/ops-local-hosting-toolbox/main/run -o toolbox
 chmod u+x toolbox
 ```
 
