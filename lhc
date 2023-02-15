@@ -31,8 +31,12 @@ for container in client.containers.list():
          path = result.path[1:]
          user = userpasswd.split(':')[0]
          password = userpasswd.split(':')[1]
-         host = hostport.split(':')[0]
-         port = hostport.split(':')[1]
+         host = hostport
+         port = "5432"
+         if ":" in hostport:
+            host = hostport.split(':')[0]
+            port = hostport.split(':')[1]
+            
          print("")
          print("*************** ", container.name, container.image.attrs["RepoTags"])
 
