@@ -112,9 +112,11 @@ def diagnose(container, database_url):
         ]
 
         print("kill -TTIN for the ",pid)
-
+        ## TODO ideally don't try both
+        # sidekiq
         kill_result = container.exec_run(f"kill -TTIN {pid[0]}")        
         print(kill_result)
+        # puma
         kill_result = container.exec_run(f"kill -SIGINFO {pid[0]}")        
         print(kill_result)
         
@@ -202,7 +204,7 @@ for container in client.containers.list():
 if len(reports) > 0:
     print(json.dumps(reports, indent=4))
     filename = (
-        "diagnose-" + datetime.datetime.now().strftime("%m-%d-%Y__%H_%M_%S") + ".json"
+        "diagnose-" + datetime.datetime.now().strftime("%Y-%m-%d__%H_%M_%S") + ".json"
     )
     with open("/backups/" + filename, "w") as outfile:
         json.dump(reports, outfile, indent=4)
