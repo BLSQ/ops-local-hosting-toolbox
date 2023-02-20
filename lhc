@@ -5,153 +5,174 @@ import sys
 import json
 import subprocess
 from urllib.parse import urlparse
-import datetime;
+import datetime
 
 
-
-#print("ARGS : ",str(sys.argv))
+# print("ARGS : ",str(sys.argv))
 command = "bin/bash"
 
 
 import docker
+
 client = docker.from_env()
-ts = datetime.datetime.now()  - datetime.timedelta(seconds=5)
+ts = datetime.datetime.now() - datetime.timedelta(seconds=5)
 
 container_filter = sys.argv[2]
 
 matched_containers = 0
 
+
 def diagnose(container, database_url):
-   print("container", container)
-   report = {
-      "container": container.name, 
-      "tags": container.image.attrs["RepoTags"], 
-      "status": container.status,
-      "state": container.attrs['State'],
-      "sections":[]
-   }
+    report = {
+        "container": container.name,
+        "tags": container.image.attrs["RepoTags"],
+        "status": container.status,
+        "state": container.attrs["State"],
+        "sections": [],
+    }
 
-   exec_result = container.exec_run("ps ax")
+    container_exec_commands = [
+        {"name": "ps ax", "command": "ps ax"},
+        {"name": "uptime", "command": "uptime"},
+        {"name": "top", "command": "top -bn1"},
+        {"name": "df -h", "command": "df -h"},
+    ]
 
-   report["sections"].append({ 
-      "command": "ps ax",
-      "output": exec_result.output.decode("utf-8")
-   })
+    for command in container_exec_commands:
+        exec_result = container.exec_run(command["command"])
+        report["sections"].append(
+            {
+                "command": command["name"],
+                "output": exec_result.output.decode("utf-8").split("\n"),
+            }
+        )
 
-   exec_result = container.exec_run("uptime")
+    logs = container.logs(stderr=True, tail=500)
+    if logs:
+        report["sections"].append(
+            {"command": "logs", "output": logs.decode("utf-8").split("\n")}
+        )
 
-   report["sections"].append({ 
-      "command": "uptime",
-      "output": exec_result.output.decode("utf-8")
-   })
+    if database_url:
+        queries = [
+            {
+                "name": "db size",
+                "sql": "SELECT current_database(), pg_size_pretty( SUM(pg_database_size(datname))::bigint ) As human_size , SUM( pg_database_size(datname) )::bigint As raw_size , pg_size_pretty( (SUM(pg_database_size(datname) ) - pg_database_size(current_database() ) )::bigint ) aS h_without_current FROM pg_database",
+            },
+            {
+                "name": "db pg_stat_activity",
+                "sql": "COPY (select * from pg_stat_activity) TO STDOUT WITH CSV HEADER;",
+            },
+            {
+                "name": "db version",
+                "sql": "select version(),current_catalog,current_user",
+            },
+            {"name": "db postgis version", "sql": "select postgis_full_version()"},
+        ]
+        for query in queries:
+            sql = query["sql"]
+            command = f'PAGER=cat psql {database_url} -c "{sql}"'
+            result = subprocess.run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=True,
+                text=True,
+            )
+            report["sections"].append(
+                {
+                    "command": query["name"],
+                    "output": result.stdout.split("\n") if result.stdout else None,
+                    "stderr": result.stderr.split("\n") if result.stderr else None,
+                }
+            )
 
+    return report
 
-   logs = container.logs(stderr=True, tail=500)
-   if logs: 
-      report["sections"].append({ 
-            "command": "logs",
-            "output": logs.decode("utf-8").split("\n")
-      })
-
-   
-
-   if database_url:
-      queries = [
-         {
-            "name": "db size",
-            "sql": "SELECT current_database(), pg_size_pretty( SUM(pg_database_size(datname))::bigint ) As human_size , SUM( pg_database_size(datname) )::bigint As raw_size , pg_size_pretty( (SUM(pg_database_size(datname) ) - pg_database_size(current_database() ) )::bigint ) aS h_without_current FROM pg_database"
-         },
-         {
-            "name": "db pg_stat_activity",
-            "sql": "COPY (select * from pg_stat_activity) TO STDOUT WITH CSV HEADER;"
-         },
-         {
-            "name": "db version",
-            "sql": "select version(),current_catalog,current_user"
-         },
-         {
-            "name": "db postgis version",
-            "sql": "select postgis_full_version()"
-         }
-      ]
-      for query in queries:
-         sql = query["sql"]
-         command = f"PAGER=cat psql {database_url} -c \"{sql}\""
-         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,  shell=True, text=True)
-         report["sections"].append({
-            "command": query["name"],
-            "output": result.stdout.split("\n") if result.stdout else None,
-            "stderr": result.stderr.split("\n") if result.stderr else None
-         })
-
-
-   return report
 
 reports = []
 for container in client.containers.list():
-   if container_filter in container.name:
-      #import pdb; pdb.set_trace()
-      database_urls = [x for x in container.attrs["Config"]["Env"] if x.startswith("DATABASE_URL=") ]
-      matched_containers += 1
-      if len(database_urls) > 0:
-         database_url = database_urls[0][len("DATABASE_URL="):]        
-         result = urlparse(database_url)
-         userpasswd, hostport = result.netloc.split('@')
-         path = result.path[1:]
-         user = userpasswd.split(':')[0]
-         password = userpasswd.split(':')[1]
-         host = hostport
-         port = "5432"
-         if ":" in hostport:
-            host = hostport.split(':')[0]
-            port = hostport.split(':')[1]
+    if container_filter in container.name:
+        # import pdb; pdb.set_trace()
+        database_urls = [
+            x for x in container.attrs["Config"]["Env"] if x.startswith("DATABASE_URL=")
+        ]
+        matched_containers += 1
+        if len(database_urls) > 0:
+            database_url = database_urls[0][len("DATABASE_URL=") :]
+            result = urlparse(database_url)
+            userpasswd, hostport = result.netloc.split("@")
+            path = result.path[1:]
+            user = userpasswd.split(":")[0]
+            password = userpasswd.split(":")[1]
+            host = hostport
+            port = "5432"
+            if ":" in hostport:
+                host = hostport.split(":")[0]
+                port = hostport.split(":")[1]
 
-         print("")
-         print("*************** ", container.name, container.image.attrs["RepoTags"])
+            print("")
+            print("*************** ", container.name, container.image.attrs["RepoTags"])
 
-         if sys.argv[1] == "config":
-            for key_value in container.attrs["Config"]["Env"]:
-                if "=" in key_value:
-                    print(key_value)
-            command = "echo done"
-         if sys.argv[1] == "diagnose":     
-            report = diagnose(container, database_url)
-            reports.append(report)
-            command = "echo done"
-         if sys.argv[1] == "top":
-            command = f"PGPASSWORD={password} pg_activity -h {host} -U {user} -d {path} --rds"
-         if sys.argv[1] == "cli":
-            command = f"pgcli {database_url}"
-         if sys.argv[1] == "sql":
-            command = f"psql {database_url}"
-         if sys.argv[1] == "dump":
-            command = f"pg_dump -Fc -v --no-acl --no-owner --dbname={database_url} -f /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).dump"
-         if sys.argv[1] == "diagnosedb":
-            query = "COPY (select * from pg_stat_activity) TO STDOUT WITH CSV HEADER;"
-            command = f"PAGER=cat psql {database_url} -c \"{query}\""
+            if sys.argv[1] == "config":
+                for key_value in container.attrs["Config"]["Env"]:
+                    if "=" in key_value:
+                        print(key_value)
+                command = "echo done"
+            if sys.argv[1] == "diagnose":
+                report = diagnose(container, database_url)
+                reports.append(report)
+                command = "echo done"
+            if sys.argv[1] == "top":
+                command = f"PGPASSWORD={password} pg_activity -h {host} -U {user} -d {path} --rds"
+            if sys.argv[1] == "cli":
+                command = f"pgcli {database_url}"
+            if sys.argv[1] == "sql":
+                command = f"psql {database_url}"
+            if sys.argv[1] == "dump":
+                command = f"pg_dump -Fc -v --no-acl --no-owner --dbname={database_url} -f /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).dump"
+            if sys.argv[1] == "diagnosedb":
+                query = (
+                    "COPY (select * from pg_stat_activity) TO STDOUT WITH CSV HEADER;"
+                )
+                command = f'PAGER=cat psql {database_url} -c "{query}"'
 
-         if sys.argv[1] == "diagnoserb":        
-            pid_lines = [line for line in container.exec_run("ps ax").output.split(b'\n') if 'sidekiq' in str(line) or 'puma' in str(line) ]
-            if len(pid_lines) > 0:
-               pid =  [line.decode("utf-8").split("?")[0].strip() [0] for line in pid_lines]
-               
-               container.exec_run(f"kill -3 {pid}")
-               print("ts ", ts)
-               logs = container.logs(stderr=True, since=ts)
-               if logs: 
-                     for line in logs.decode("utf-8").split("\n"):
-                        print(line)
-            command =  "ls"     
-         os.system(command)
+            if sys.argv[1] == "diagnoserb":
+                pid_lines = [
+                    line
+                    for line in container.exec_run("ps ax").output.split(b"\n")
+                    if "sidekiq" in str(line) or "puma" in str(line)
+                ]
+                if len(pid_lines) > 0:
+                    pid = [
+                        line.decode("utf-8").split("?")[0].strip()[0]
+                        for line in pid_lines
+                    ]
+
+                    container.exec_run(f"kill -3 {pid}")
+                    print("ts ", ts)
+                    logs = container.logs(stderr=True, since=ts)
+                    if logs:
+                        for line in logs.decode("utf-8").split("\n"):
+                            print(line)
+                command = "ls"
+            os.system(command)
 
 if len(reports) > 0:
-   print(json.dumps(reports, indent=4))
-   filename = "diagnose-"+datetime.datetime.now().strftime("%m-%d-%Y__%H_%M_%S")+".json"
-   with open("/backups/"+filename, "w") as outfile:
-     json.dump(reports, outfile, indent=4)
-   print(filename)
+    print(json.dumps(reports, indent=4))
+    filename = (
+        "diagnose-" + datetime.datetime.now().strftime("%m-%d-%Y__%H_%M_%S") + ".json"
+    )
+    with open("/backups/" + filename, "w") as outfile:
+        json.dump(reports, outfile, indent=4)
+    print(filename)
 
 
 if matched_containers == 0:
-    print("container not found", container_filter, "\n","\n".join([container.name for container in client.containers.list()]))
+    print(
+        "container not found",
+        container_filter,
+        "\n",
+        "\n".join([container.name for container in client.containers.list()]),
+    )
 quit()
