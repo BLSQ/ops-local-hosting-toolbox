@@ -15,7 +15,7 @@ command = "bin/bash"
 import docker
 
 client = docker.from_env()
-ts = datetime.datetime.now() - datetime.timedelta(seconds=5)
+
 
 container_filter = sys.argv[2]
 
@@ -30,6 +30,8 @@ def diagnose(container, database_url):
         "state": container.attrs["State"],
         "sections": [],
     }
+
+    # Container OS commands
 
     container_exec_commands = [
         {"name": "ps ax", "command": "ps ax"},
@@ -47,11 +49,15 @@ def diagnose(container, database_url):
             }
         )
 
+    # Last container logs
+
     logs = container.logs(stderr=True, tail=500)
     if logs:
         report["sections"].append(
             {"command": "logs", "output": logs.decode("utf-8").split("\n")}
         )
+
+    # Postgres commands
 
     if database_url:
         queries = [
@@ -67,7 +73,10 @@ def diagnose(container, database_url):
                 "name": "db version",
                 "sql": "select version(),current_catalog,current_user",
             },
-            {"name": "db postgis version", "sql": "select postgis_full_version()"},
+            {
+                "name": "db postgis version", 
+                "sql": "select postgis_full_version()"
+            },
         ]
         for query in queries:
             sql = query["sql"]
@@ -87,8 +96,40 @@ def diagnose(container, database_url):
                 }
             )
 
+    # ruby thread stacks
+
+    pid_lines = [
+        line
+        for line in container.exec_run("ps ax").output.split(b"\n")
+        if "sidekiq" in str(line) or "puma" in str(line)
+    ]
+    if len(pid_lines) > 0:
+        just_before_now = datetime.datetime.now() - datetime.timedelta(seconds=1)
+
+        pid = [
+            line.decode("utf-8").split("?")[0].strip()[0]
+            for line in pid_lines
+        ]
+
+        print("kill -TTIN for the ",pid)
+
+        kill_result = container.exec_run(f"kill -TTIN {pid[0]}")        
+        print(kill_result)
+        kill_result = container.exec_run(f"kill -SIGINFO {pid[0]}")        
+        print(kill_result)
+        
+        logs = container.logs(stderr=True, since=just_before_now)
+
+        report["sections"].append(
+            {
+                "commmand": "thread dump",
+                "output": logs.decode("utf-8").split("\n") if logs else []
+            }
+        )
+
     return report
 
+ts = datetime.datetime.now() - datetime.timedelta(seconds=5)
 
 reports = []
 for container in client.containers.list():
@@ -166,6 +207,8 @@ if len(reports) > 0:
     with open("/backups/" + filename, "w") as outfile:
         json.dump(reports, outfile, indent=4)
     print(filename)
+
+    #f"./mc config host add --api s3v4 hesabu-minio https://minio.${DOMAIN_NAME} ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}"
 
 
 if matched_containers == 0:
