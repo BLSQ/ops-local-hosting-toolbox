@@ -27,6 +27,7 @@ def diagnose(container, database_url):
       "container": container.name, 
       "tags": container.image.attrs["RepoTags"], 
       "status": container.status,
+      "state": container.attrs['State'],
       "sections":[]
    }
 
@@ -86,6 +87,7 @@ def diagnose(container, database_url):
 
    return report
 
+reports = []
 for container in client.containers.list():
    if container_filter in container.name:
       #import pdb; pdb.set_trace()
@@ -114,7 +116,7 @@ for container in client.containers.list():
             command = "echo done"
          if sys.argv[1] == "diagnose":     
             report = diagnose(container, database_url)
-            print(json.dumps(report, indent=4))
+            reports.append(report)
             command = "echo done"
          if sys.argv[1] == "top":
             command = f"PGPASSWORD={password} pg_activity -h {host} -U {user} -d {path} --rds"
@@ -141,6 +143,14 @@ for container in client.containers.list():
                         print(line)
             command =  "ls"     
          os.system(command)
+
+if len(reports) > 0:
+   print(json.dumps(reports, indent=4))
+   filename = "diagnose-"+datetime.datetime.now().strftime("%m-%d-%Y__%H_%M_%S")+".json"
+   with open("/backups/"+filename, "w") as outfile:
+     json.dump(reports, outfile, indent=4)
+   print(filename)
+
 
 if matched_containers == 0:
     print("container not found", container_filter, "\n","\n".join([container.name for container in client.containers.list()]))
