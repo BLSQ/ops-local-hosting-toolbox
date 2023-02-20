@@ -2,6 +2,8 @@
 
 import os
 import sys
+import json
+import subprocess
 from urllib.parse import urlparse
 import datetime;
 
@@ -18,6 +20,71 @@ ts = datetime.datetime.now()  - datetime.timedelta(seconds=5)
 container_filter = sys.argv[2]
 
 matched_containers = 0
+
+def diagnose(container, database_url):
+   print("container", container)
+   report = {
+      "container": container.name, 
+      "tags": container.image.attrs["RepoTags"], 
+      "status": container.status,
+      "sections":[]
+   }
+
+   exec_result = container.exec_run("ps ax")
+
+   report["sections"].append({ 
+      "command": "ps ax",
+      "output": exec_result.output.decode("utf-8")
+   })
+
+   exec_result = container.exec_run("uptime")
+
+   report["sections"].append({ 
+      "command": "uptime",
+      "output": exec_result.output.decode("utf-8")
+   })
+
+
+   logs = container.logs(stderr=True, tail=500)
+   if logs: 
+      report["sections"].append({ 
+            "command": "logs",
+            "output": logs.decode("utf-8").split("\n")
+      })
+
+   
+
+   if database_url:
+      queries = [
+         {
+            "name": "db size",
+            "sql": "SELECT current_database(), pg_size_pretty( SUM(pg_database_size(datname))::bigint ) As human_size , SUM( pg_database_size(datname) )::bigint As raw_size , pg_size_pretty( (SUM(pg_database_size(datname) ) - pg_database_size(current_database() ) )::bigint ) aS h_without_current FROM pg_database"
+         },
+         {
+            "name": "db pg_stat_activity",
+            "sql": "COPY (select * from pg_stat_activity) TO STDOUT WITH CSV HEADER;"
+         },
+         {
+            "name": "db version",
+            "sql": "select version(),current_catalog,current_user"
+         },
+         {
+            "name": "db postgis version",
+            "sql": "select postgis_full_version()"
+         }
+      ]
+      for query in queries:
+         sql = query["sql"]
+         command = f"PAGER=cat psql {database_url} -c \"{sql}\""
+         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,  shell=True, text=True)
+         report["sections"].append({
+            "command": query["name"],
+            "output": result.stdout.split("\n") if result.stdout else None,
+            "stderr": result.stderr.split("\n") if result.stderr else None
+         })
+
+
+   return report
 
 for container in client.containers.list():
    if container_filter in container.name:
@@ -45,6 +112,10 @@ for container in client.containers.list():
                 if "=" in key_value:
                     print(key_value)
             command = "echo done"
+         if sys.argv[1] == "diagnose":     
+            report = diagnose(container, database_url)
+            print(json.dumps(report, indent=4))
+            command = "echo done"
          if sys.argv[1] == "top":
             command = f"PGPASSWORD={password} pg_activity -h {host} -U {user} -d {path} --rds"
          if sys.argv[1] == "cli":
@@ -69,7 +140,6 @@ for container in client.containers.list():
                      for line in logs.decode("utf-8").split("\n"):
                         print(line)
             command =  "ls"     
-         import os
          os.system(command)
 
 if matched_containers == 0:
