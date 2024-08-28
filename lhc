@@ -38,8 +38,6 @@ def diagnose(container, database_url):
         {"name": "uptime", "command": "uptime"},
         {"name": "top", "command": "top -bn1"},
         {"name": "df -h", "command": "df -h"},
-        {"name": "thread", "command": "sh -c 'for PID in `jps | grep -v jps | cut \"-d \" -f1`; do jstack -F $PID ; done'"},
-
     ]
 
     for command in container_exec_commands:
