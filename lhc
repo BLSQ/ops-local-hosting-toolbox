@@ -39,6 +39,12 @@ def diagnose(container, database_url):
         {"name": "top", "command": "top -bn1"},
         {"name": "df -h", "command": "df -h"},
     ]
+    if "dhis2" in container.name:
+        thread_command = {
+            "name": "thread dump",
+            "command": "sh -c 'for PID in `jps | grep -v jps | cut \"-d \" -f1`; do jstack $PID ; done'"
+        }
+        container_exec_commands.append(thread_command)
 
     for command in container_exec_commands:
         exec_result = container.exec_run(command["command"])
