@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-if [ -z "$PS1" ]; then
+if [ "$2" == "dump" ]; then
       docker run -v '/var/run/docker.sock:/var/run/docker.sock' --cap-add=SYS_PTRACE --volume /home/backups:/backups --network $1_default --rm blsq/local-hosting-toolbox "${@:2}" 
 else
       docker run -it -v '/var/run/docker.sock:/var/run/docker.sock' --cap-add=SYS_PTRACE --volume /home/backups:/backups --network $1_default --rm blsq/local-hosting-toolbox "${@:2}" 
