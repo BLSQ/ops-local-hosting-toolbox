@@ -179,7 +179,10 @@ for container in client.containers.list():
             if sys.argv[1] == "sql":
                 command = f"psql {database_url}"
             if sys.argv[1] == "dump":
-                command = f"pg_dump -Fc -v --no-acl --no-owner --dbname={database_url} -f /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).dump"
+                ignore_tables = ""
+                if len(sys.argv)>= 4 and sys.argv[3] == "light":
+                     ignore_tables = "-T aggregated* -T analytics* -T completeness* -T _*"
+                command = f"pg_dump -Fc -v --no-acl --no-owner --dbname={database_url} {ignore_tables} -f /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).dump"             
             if sys.argv[1] == "diagnosedb":
                 query = (
                     "COPY (select * from pg_stat_activity) TO STDOUT WITH CSV HEADER;"
