@@ -180,7 +180,7 @@ for container in client.containers.list():
                 command = f"psql {database_url}"
             if sys.argv[1] == "dump":
                 ignore_tables = ""
-                if len(sys.argv)>= 3 and sys.argv[3] == "light":
+                if len(sys.argv)>= 4 and sys.argv[3] == "light":
                      ignore_tables = "-T aggregated* -T analytics* -T completeness* -T _*"
                 command = f"pg_dump -Fc -v --no-acl --no-owner --dbname={database_url} {ignore_tables} -f /backups/{container.name}-$(date +%Y-%m-%d_%Hh%M).dump"             
             if sys.argv[1] == "diagnosedb":
